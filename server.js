@@ -8,7 +8,7 @@ const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const teacherRoutes = require('./routes/teacherRoutes');
 const studentRoutes = require('./routes/studentRoutes');
-
+const aiChatbotRoutes = require('./routes/aiChatbotRoutes'); // <-- ADD THIS
 // Load environment variables
 dotenv.config();
 
@@ -37,6 +37,7 @@ app.use('/uploads', express.static(uploadDir)); // <-- 2. Add static file servin
 app.use("/api/auth", authRoutes);
 app.use("/api/teacher", teacherRoutes); // Teacher specific routes (profile, etc.)
 app.use("/api/student", studentRoutes);
+app.use("/api/ai-chatbot", aiChatbotRoutes);
 // Add other routes (admin, student) here as you build them
 
 // --- Server Initialization ---

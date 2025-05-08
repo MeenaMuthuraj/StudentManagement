@@ -3,102 +3,105 @@ const mongoose = require("mongoose");
 const bcrypt = require('bcryptjs'); // Make sure bcryptjs is required if using pre-save hook for password
 
 const userSchema = new mongoose.Schema({
-  username: { type: String, required: true }, // Consider making unique: true later
-  email: { type: String, required: true, unique: true, lowercase: true, trim: true }, // Added lowercase and trim
+  username: { type: String, required: true, trim: true }, // Added trim
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: true, select: false }, // Exclude password by default
   userType: {
     type: String,
     required: true,
-    enum: ['student', 'teacher', 'admin'] // Define allowed types
+    enum: ['student', 'teacher', 'admin']
   },
-  profile: {
-    // --- Common Fields ---
+  profile: { // Ensure all fields from the StudentEditProfile form are defined here
+    // --- Basic Info ---
     firstName: { type: String, trim: true },
     lastName: { type: String, trim: true },
     fullName: String, // Auto-generated
-    profilePic: { type: String, default: null },
+    profilePic: { type: String, default: null }, // Path to profile picture
     phone: { type: String, trim: true },
     dob: Date,
-    gender: { type: String, enum: ['', 'Male', 'Female', 'Other'] }, // Added '' for initial empty selection
-    address: String,
-    city: String,
-    state: String,
-    country: { type: String, default: 'India' },
-    zipCode: String,
+    gender: { type: String, enum: ['', 'Male', 'Female', 'Other'] },
 
-    // --- Student Specific Fields (or general if applicable) ---
-    bloodGroup: { type: String, enum: ['', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] }, // Enum added
-    nationality: { type: String, default: 'Indian' },
-    rollNumber: { type: String, sparse: true, trim: true }, // Make unique per school/system later if needed, sparse allows multiple nulls
-    admissionDate: Date,
-    currentGrade: String, // Or consider Class reference later
-    previousSchool: String,
-    fatherName: String,
-    fatherOccupation: String,
-    fatherPhone: String,
-    motherName: String,
-    motherOccupation: String,
-    motherPhone: String,
-    guardianName: String,
-    guardianRelation: String,
-    guardianPhone: String,
-    medicalConditions: String,
-    allergies: String,
-    regularMedications: String,
+    // --- Contact Info ---
+    address: { type: String, trim: true },
+    city: { type: String, trim: true },
+    state: { type: String, trim: true },
+    country: { type: String, default: 'India', trim: true },
+    zipCode: { type: String, trim: true },
+
+    // --- Student Specific Academic/Other Info ---
+    bloodGroup: { type: String, enum: ['', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] },
+    nationality: { type: String, default: 'Indian', trim: true },
+    rollNumber: { type: String, sparse: true, trim: true }, // Usually managed by admin/teacher
+    admissionDate: Date, // Usually managed by admin/teacher
+    currentGrade: String, // Usually managed by admin/teacher
+    previousSchool: { type: String, trim: true }, // Student might provide this initially
+
+    // --- Class Preference ---
+    requestedClassName: { type: String, trim: true, default: null }, // For student input
+
+    // --- Parent/Guardian Info ---
+    fatherName: { type: String, trim: true },
+    fatherOccupation: { type: String, trim: true },
+    fatherPhone: { type: String, trim: true },
+    motherName: { type: String, trim: true },
+    motherOccupation: { type: String, trim: true },
+    motherPhone: { type: String, trim: true },
+    guardianName: { type: String, trim: true },
+    guardianRelation: { type: String, trim: true },
+    guardianPhone: { type: String, trim: true },
+
+    // --- Medical Info ---
+    medicalConditions: { type: String, trim: true },
+    allergies: { type: String, trim: true },
+    regularMedications: { type: String, trim: true },
+
+    // --- Additional Services ---
     transportRequired: { type: Boolean, default: false },
-    transportRoute: String,
+    transportRoute: { type: String, trim: true },
     hostelRequired: { type: Boolean, default: false },
 
-    // --- FIELD ADDED FOR STUDENT TO ENTER CLASS PREFERENCE ---
-    requestedClassName: { type: String, trim: true, default: null },
-    // ---------------------------------------------------------
-
-    // --- Teacher Specific Fields ---
+    // --- Teacher Specific Fields (Should be empty for students) ---
     qualification: String,
-    experience: String, // Or Number
-    subjects: String, // Likely better managed via Class schema
+    experience: String,
+    subjects: String,
     schoolName: String,
     designation: String,
     skills: String,
-
   },
-  // --- Student Enrollment (Managed by Admin/Process) ---
+  // --- Student Enrollment (Managed elsewhere) ---
   enrolledClasses: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Class'
   }],
-  createdAt: { type: Date, default: Date.now }
-}, { timestamps: true }); // Added timestamps
+}, { timestamps: true }); // Add timestamps (createdAt, updatedAt)
 
-// Auto-generate fullName before saving
+// --- Mongoose Hooks ---
+
+// Auto-generate/update fullName before saving
 userSchema.pre('save', function(next) {
-    let nameChanged = false;
-    if (this.isModified('profile.firstName') || this.isNew && this.profile?.firstName) {
-        nameChanged = true;
-    }
-    if (this.isModified('profile.lastName') || this.isNew && this.profile?.lastName) {
-         nameChanged = true;
-    }
-
-    if (nameChanged && this.profile) { // Ensure profile exists
-        this.profile.fullName = `${this.profile.firstName || ''} ${this.profile.lastName || ''}`.trim();
+    // Check if firstName or lastName within the profile object was modified
+    if (this.isModified('profile.firstName') || this.isModified('profile.lastName')) {
+        if (this.profile) { // Ensure profile object exists
+            this.profile.fullName = `${this.profile.firstName || ''} ${this.profile.lastName || ''}`.trim();
+            console.log(`Updated fullName to: ${this.profile.fullName}`);
+        }
     }
 
     // Auto-generate username only if not provided during initial creation
-     if (this.isNew && !this.username && this.email) {
-          this.username = this.email.split('@')[0];
-          // TODO: Add logic to ensure username uniqueness if necessary
-      }
+    if (this.isNew && !this.username && this.email) {
+        this.username = this.email.split('@')[0];
+        // TODO: Consider adding logic for username uniqueness if required
+    }
     next();
 });
 
 
-// Add method to compare passwords (optional but good practice)
+// Add method to compare passwords (optional but good practice, used for login)
 userSchema.methods.comparePassword = async function(candidatePassword) {
-    // Fetch password explicitly as it's selected: false
+    // Need to explicitly fetch password field as it's select: false
     const user = await this.constructor.findById(this._id).select('+password');
     if (!user || !user.password) {
-         throw new Error("Password field missing for comparison."); // Should not happen if required
+         throw new Error("Password field missing for comparison.");
     }
      return bcrypt.compare(candidatePassword, user.password);
 };

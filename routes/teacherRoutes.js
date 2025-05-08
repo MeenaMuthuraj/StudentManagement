@@ -26,7 +26,12 @@ const {
     saveAttendance, 
     getClassAttendanceReport, 
     uploadImage,
-    uploadDocument
+    uploadDocument,
+    createQuiz,          // <-- ADDED
+    getQuizzesByTeacher,
+    updateQuizStatus,  // <-- ADDED
+    deleteQuiz,
+    getQuizResults
   } = require('../controllers/teacherController');
 const authMiddleware = require('../middleware/authMiddleware');
 
@@ -115,5 +120,20 @@ router.post('/attendance', authMiddleware, saveAttendance);
 // --- Attendance Report Route ---
 // GET report for specific class and date (query param: date)
 router.get('/attendance/reports/class/:classId', authMiddleware, getClassAttendanceReport);       // Save marked attendance
-
+// ========================================
+//          📝 QUIZ ROUTES (NEW)
+// ========================================
+// Using '/quizzes' as the base path, applying auth middleware to ensure only logged-in users can access
+router.post('/quizzes', authMiddleware, createQuiz);
+router.get('/quizzes', authMiddleware, getQuizzesByTeacher);
+router.put('/quizzes/:quizId/status', authMiddleware, updateQuizStatus);
+router.delete('/quizzes/:quizId', authMiddleware, deleteQuiz);
+router.get('/quizzes/:quizId/results', authMiddleware, getQuizResults);
+// --- Future routes ---
+// router.get('/quizzes/:quizId', authMiddleware, getQuizDetails);     // Get details of one quiz
+// router.put('/quizzes/:quizId', authMiddleware, updateQuiz);        // Update a quiz
+// router.delete('/quizzes/:quizId', authMiddleware, deleteQuiz);     // Delete a quiz
+// router.get('/quizzes/:quizId/results', authMiddleware, getQuizResults); // View results (later)
+// router.post('/quizzes/:quizId/results', authMiddleware, saveExamResults); // Route for saving marks/results (using existing name for now) - REVISIT THIS
+// router.get('/quizzes/:quizId/students-for-marking', authMiddleware, getStudentsAndResultsForExam); // Route for getting students/marks for marking - REVISIT THIS
 module.exports = router;
