@@ -1,0 +1,170 @@
+[
+    {
+      "question": "How do I log in?",
+      "answer": "Go to the main login page (AuthForm), select 'Teacher' as the user type, enter your registered email and password, and click 'Login'."
+    },
+    {
+      "question": "Where can I find my profile?",
+      "answer": "Your profile information is usually accessible via a 'Profile' or 'My Profile' link in the sidebar menu after you log in."
+    },
+    {
+      "question": "How do I edit my personal or professional details?",
+      "answer": "Navigate to your 'My Profile' page. Click the 'Edit Profile' button. You can update your information in the 'Personal Details' and 'Professional Details' tabs. Remember to click 'Save' on the respective tab."
+    },
+    {
+      "question": "How to change my profile picture?",
+      "answer": "Go to 'My Profile', click 'Edit Profile'. In the profile picture section, click the 'Change Image' or 'Edit Image' button to upload a new picture from your device. You can also remove the current picture using the 'Remove Image' button."
+    },
+    {
+      "question": "How can I update my password?",
+      "answer": "Visit your 'My Profile' page and click 'Edit Profile'. Find the 'Change Password' section. Enter your current password, your new password, and confirm the new password, then click 'Update Password'."
+    },
+    {
+      "question": "How do I see the classes I manage?",
+      "answer": "Click on 'My Classes' in the sidebar menu. This page shows an overview of all the classes assigned to you."
+    },
+    {
+      "question": "How do I create a new class?",
+      "answer": "Go to the 'My Classes' page. Click the '+ Add New Class' button. Enter the name for your class (e.g., 'Grade 10 - Section A') in the popup window and click 'Create Class'."
+    },
+    {
+      "question": "Can I rename a class I created?",
+      "answer": "Yes. On the 'My Classes' page, find the class card you want to rename. Click the edit icon (pencil) on the card, enter the new name in the popup, and click 'Update Class'."
+    },
+    {
+      "question": "How do I delete a class?",
+      "answer": "On the 'My Classes' page, find the class card you wish to remove. Click the delete icon (trash bin) on the card. You will be asked to confirm the deletion."
+    },
+    {
+      "question": "How to add subjects to a class?",
+      "answer": "Navigate to the 'Subjects' page (often found under 'Classes' or as a separate link in the sidebar). First, select the Class you want to add a subject to from the class list. Then, use the 'Add Subject' button or input field usually located above the subject list for that class."
+    },
+    {
+      "question": "Where can I view the subjects for a specific class?",
+      "answer": "Go to the 'Subjects' page. Select the desired class from the list on the left or top. The subjects for that specific class will then be displayed in the main area."
+    },
+    {
+      "question": "How do I upload study materials for a subject?",
+      "answer": "Go to the 'Subjects' page. Select the correct Class and then the specific Subject. Within that subject's details, look for an 'Upload New Material' section or button. Click it, choose your file, and confirm the upload."
+    },
+    {
+      "question": "How to upload the syllabus file?",
+      "answer": "Navigate to the 'Subjects' page. Choose the specific Class and Subject. Look for the 'Upload New Syllabus File' section or button within the subject's details and use that to upload your syllabus document."
+    },
+    {
+      "question": "Can students download the materials and syllabus I upload?",
+      "answer": "Yes, students assigned to the class should be able to view and download the syllabus and material files you upload for the subjects associated with their class."
+    },
+    {
+      "question": "How do I delete a material or syllabus file?",
+      "answer": "Go to the 'Subjects' page, select the Class and Subject. Find the specific material or syllabus file in the list. Click the delete icon (trash bin) next to the file name and confirm the deletion."
+    },
+    {
+      "question": "Where can I see the list of students in my class?",
+      "answer": "Go to 'My Classes'. Click on the specific class card (or a 'View Students' button/link on the card). This will display the list of students currently enrolled or associated with that class name."
+    },
+    {
+      "question": "How do I view the full profile of a student in my class?",
+      "answer": "First, go to the student list for your class (via 'My Classes' -> select class). In the student list, click on the student's name or a 'View Profile' button next to their name."
+    },
+    {
+      "question": "Can I add a new student myself?",
+      "answer": "Currently, adding new students to the system is typically handled by the school administration. Please contact your admin to enroll new students. You can then view them in your class list if they are assigned correctly."
+    },
+    {
+      "question": "How to mark attendance?",
+      "answer": "Find the 'Mark Attendance' link in the sidebar. On that page, select the Class and the specific Date for which you want to mark attendance. Click the status (Present, Absent, Late) for each student and then click 'Save Attendance'."
+    },
+    {
+      "question": "Where can I see past attendance records?",
+      "answer": "Look for an 'Attendance Report' or 'View Attendance' section, possibly linked from the sidebar or the 'Mark Attendance' page. You can usually filter reports by class and date."
+    },
+    {
+      "question": "How do I create a quiz?",
+      "answer": "Navigate to the 'Quizzes / Exams' section in the sidebar and click 'Create Quiz'. Fill in the Quiz Details (Title, Class, Subject). Then, use the 'Add Question' form to add questions one by one, providing question text, options, and marking the correct answer. Finally, click 'Save as Draft' or 'Save & Publish'."
+    },
+    {
+      "question": "Where can I see the quizzes I have created?",
+      "answer": "Go to the 'Quizzes / Exams' section in the sidebar and click on 'View Quizzes' (or similar). This page lists all quizzes you have created, showing their status (Draft, Published, Closed)."
+    },
+    {
+      "question": "How do I publish a draft quiz?",
+      "answer": "Go to the 'View Quizzes' page. Find the quiz listed with a 'Draft' status. Click the 'Publish' icon (usually a play button) next to the quiz. Confirm the action when prompted."
+    },
+    {
+      "question": "What is the difference between 'Save as Draft' and 'Save & Publish' when creating a quiz?",
+      "answer": "'Save as Draft' saves your quiz but doesn't make it visible to students yet. You can edit it later. 'Save & Publish' saves the quiz and immediately makes it available for students (depending on any Publish Date you might set)."
+    },
+    {
+      "question": "How to use this chatbot?",
+      "answer": "Just type your question about how to use the teacher portal in the input field below! For example, ask 'How do I add a subject?' or 'Where can I mark attendance?' I'll try my best to answer based on my programmed knowledge."
+    },
+    {
+        "question": "Hi",
+        "answer": "Hello Teacher! How can I help you navigate the Student Management portal today?"
+      },
+      {
+        "question": "Hello",
+        "answer": "Hi there, Teacher! What task can I assist you with in the portal?"
+      },
+      {
+        "question": "Hey chatbot",
+        "answer": "Hey! I'm here to help. What would you like to know about using the teacher portal?"
+      },
+      {
+        "question": "Good morning",
+        "answer": "Good morning! How can I assist you with managing your students or classes today?"
+      },
+      {
+        "question": "Good Evening",
+        "answer": "Good evening! How can I assist you with managing your students or classes today?"
+      },
+      {
+        "question": "Good afternoon",
+        "answer": "Good afternoon! Is there anything specific in the portal you need help with?"
+      },
+      {
+        "question": "How are you?",
+        "answer": "I'm functioning optimally and ready to help! How can I assist you with the Student Management portal?"
+      },
+      {
+        "question": "How's it going chatbot?",
+        "answer": "All systems are go! I'm ready to help you find information about the portal features. What's your question?"
+      },
+      {
+        "question": "What can you do?",
+        "answer": "I can provide instructions on how to use the features of the Teacher Portal, such as adding classes, creating quizzes, uploading materials, marking attendance, and managing your profile. Just ask me how to do something!"
+      },
+      {
+        "question": "Help",
+        "answer": "I can certainly try to help! Please ask me a specific question about how to use the portal, like 'How do I upload a syllabus?' or 'Where do I view attendance reports?'"
+      },
+      {
+        "question": "Can you help me?",
+        "answer": "Yes, I can guide you on using the website features. What specific task are you trying to do? For example, you can ask 'How to create a quiz?'."
+      },
+      {
+        "question": "Okay",
+        "answer": "Alright! Let me know if anything else comes up."
+      },
+      {
+        "question": "OK",
+        "answer": "Got it! Feel free to ask if you need more help with the portal."
+      },
+      {
+        "question": "Thank you",
+        "answer": "You're welcome! Happy to help. Is there anything else?"
+      },
+      {
+        "question": "Thanks",
+        "answer": "No problem! Let me know if you have more questions about the portal."
+      },
+      {
+        "question": "Bye",
+        "answer": "Goodbye! Have a productive day."
+      },
+      {
+        "question": "Goodbye chatbot",
+        "answer": "Farewell! Don't hesitate to ask if you need help again later."
+      }
+  ]

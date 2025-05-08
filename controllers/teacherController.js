@@ -9,8 +9,8 @@ const path = require('path');
 const fs = require('fs'); // File System module
 const mongoose = require('mongoose');
 const Attendance = require('../models/Attendance');
-
-
+const Quiz = require('../models/Quiz');   // <-- NEW: Import Quiz model
+const QuizAttempt = require('../models/QuizAttempt');
 // --- Multer Configuration (Keep As Is) ---
 const uploadDir = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadDir)){ /* ... create dir ... */ } else { /* ... log found ... */ }
@@ -1340,64 +1340,236 @@ const getStudentProfileForTeacher = async (req, res) => {
          res.status(500).json({ message: "Server error fetching student profile." });
     }
 };
-
-/**
- * @desc    Fetch student list for a class AND their attendance status for a specific date/subject/period
- * @route   GET /api/teacher/attendance?classId=...&subjectId=...&date=...&period=...
- *          (This route needs to be created in teacherRoutes.js)
- * @access  Private (Teacher)
- */
-// backend/controllers/teacherController.js
-
 /**
  * @desc    Fetch student list for a class AND their attendance status for a specific date/subject/period
  * @route   GET /api/teacher/attendance?classId=...&subjectId=...&date=...&period=...
  * @access  Private (Teacher)
  */
 const fetchAttendanceForDate = async (req, res) => {
-    const { classId, date } = req.query; // Only need classId and date
+    const { classId, date } = req.query;
     const teacherId = req.user.userId;
     console.log(`---> GET /api/teacher/attendance for Class: ${classId}, Date: ${date} by Teacher: ${teacherId}`);
 
     // --- Validations ---
     if (!classId || !date) return res.status(400).json({ message: "Missing params: classId, date." });
-    if (!mongoose.Types.ObjectId.isValid(classId)) return res.status(400).json({ message: 'Invalid Class ID.' });
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/; if (!dateRegex.test(date)) return res.status(400).json({ message: 'Invalid Date format. Use YYYY-MM-DD.' });
-
-    let attendanceDate; // Convert date string to Date object (start of day UTC)
+    
+    let attendanceDate;
     try {
-         const parts = date.split('-');
-         attendanceDate = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 0, 0, 0, 0));
-         if (isNaN(attendanceDate.getTime())) throw new Error();
-     } catch(e){ return res.status(400).json({ message: 'Invalid Date value.' }); }
+        const parts = date.split('-');
+        attendanceDate = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 0, 0, 0, 0));
+        if (isNaN(attendanceDate.getTime())) throw new Error('Invalid Date value');
+    } catch(e){ return res.status(400).json({ message: e.message || 'Invalid Date value.' }); }
+
+    try {
+        // 1. Verify teacher owns class & get student IDs
+        const targetClass = await Class.findOne({ _id: classId, teacher: teacherId })
+            .select('students')
+            .populate({
+                path: 'students',
+                select: 'email profile.firstName profile.lastName profile.fullName profile.phone username',
+                options: { lean: true }
+            });
+        
+        if (!targetClass) return res.status(404).json({ message: "Class not found or access denied." });
+
+        const studentsInClass = targetClass.students || [];
+        if (studentsInClass.length === 0) {
+            console.log(`--- No students found in class ${classId}`);
+            return res.status(200).json({ students: [], attendanceStatus: {} });
+        }
+
+        // 2. Format student data with proper names
+        const formattedStudents = studentsInClass.map(student => {
+            // Determine the display name
+            let displayName;
+            if (student.profile?.fullName) {
+                displayName = student.profile.fullName;
+            } else {
+                const firstName = student.profile?.firstName || '';
+                const lastName = student.profile?.lastName || '';
+                displayName = `${firstName} ${lastName}`.trim();
+                if (!displayName) displayName = student.username;
+            }
+
+            return {
+                _id: student._id,
+                email: student.email,
+                profile: {
+                    fullName: displayName,
+                    phone: student.profile?.phone || 'Not provided'
+                }
+            };
+        });
+
+        // 3. Get student IDs for attendance query
+        const studentIds = studentsInClass.map(s => s._id);
+
+        // 4. Fetch existing attendance for these students ON THIS DATE ONLY
+        const existingAttendance = await Attendance.find({
+            date: attendanceDate,
+            class: classId,
+            student: { $in: studentIds }
+        }).select('student status').lean();
+
+        // 5. Create status map
+        const attendanceStatusMap = existingAttendance.reduce((map, record) => {
+            map[record.student.toString()] = record.status;
+            return map;
+        }, {});
+
+        // 6. Send response with properly formatted students
+        res.status(200).json({ 
+            students: formattedStudents, 
+            attendanceStatus: attendanceStatusMap 
+        });
+
+    } catch (error) {
+        console.error("!!! Error in fetchAttendanceForDate:", error);
+        res.status(500).json({ message: "Server error fetching attendance data." });
+    }
+};
+/**
+ * @desc    Get attendance records for a specific class on a specific date
+ * @route   GET /api/teacher/attendance/reports/class/:classId?date=YYYY-MM-DD
+ * @access  Private (Teacher)
+ */
+const getClassAttendanceReport = async (req, res) => {
+    const { classId } = req.params;
+    const { date } = req.query;
+    const teacherId = req.user?.userId;
+
+    console.log(`---> GET Report for Class ${classId}, Date ${date} by Teacher ${teacherId}`);
+
+    // --- Validations ---
+    if (!classId || !mongoose.Types.ObjectId.isValid(classId)) {
+        return res.status(400).json({ message: 'Invalid or missing Class ID.' });
+    }
+    if (!date) {
+        return res.status(400).json({ message: 'Date parameter is required.' });
+    }
+    let attendanceDate;
+    try {
+        const parts = date.split('-');
+        attendanceDate = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 0, 0, 0, 0));
+        if (isNaN(attendanceDate.getTime())) throw new Error('Invalid date value');
+    } catch (e) {
+        return res.status(400).json({ message: e.message || 'Invalid Date value.' });
+    }
+    if (!teacherId || !mongoose.Types.ObjectId.isValid(teacherId)) {
+        return res.status(401).json({ message: "Authentication error."});
+    }
 
     try {
         // 1. Verify teacher owns class
-         const targetClass = await Class.findOne({ _id: classId, teacher: teacherId }).select('students'); // Still need students list
-         if (!targetClass) return res.status(404).json({ message: "Class not found or access denied." });
-         const studentIdsInClass = targetClass.students || [];
-         if (studentIdsInClass.length === 0) return res.status(200).json({ students: [], attendanceStatus: {} });
+        const targetClass = await Class.findOne({ _id: classId, teacher: teacherId }).select('_id').lean();
+        if (!targetClass) {
+            console.warn(`[Report] Teacher ${teacherId} access denied or class ${classId} not found.`);
+            return res.status(403).json({ message: "Access denied or class not found." });
+        }
 
-        // 2. Fetch student details
-         const studentsInClass = await User.find({ _id: { $in: studentIdsInClass } }).select('profile.fullName email').lean();
+        // 2. Fetch attendance records with proper student population
+        const attendanceRecords = await Attendance.find({
+            class: classId,
+            date: attendanceDate
+        })
+        .populate({
+            path: 'student',
+            model: 'User',
+            select: 'email username profile.firstName profile.lastName profile.fullName profile.phone'
+        })
+        .lean();
 
-        // 3. Fetch existing attendance for these students ON THIS DATE ONLY
-        console.log(`Fetching existing attendance for ${date}`);
-         const existingAttendance = await Attendance.find({
-             date: attendanceDate,
-             class: classId,
-             student: { $in: studentIdsInClass } // Filter by students
-         }).select('student status');
+        // Format the records with proper names and phone numbers
+        const formattedRecords = attendanceRecords.map(record => {
+            const student = record.student;
+            const fullName = student.profile?.fullName || 
+                           `${student.profile?.firstName || ''} ${student.profile?.lastName || ''}`.trim() || 
+                           student.username;
+            
+            return {
+                ...record,
+                student: {
+                    _id: student._id,
+                    email: student.email,
+                    profile: {
+                        fullName: fullName,
+                        phone: student.profile?.phone || 'Not provided'
+                    }
+                }
+            };
+        });
 
-        // 4. Create status map
-         const attendanceStatusMap = existingAttendance.reduce((map, record) => { map[record.student.toString()] = record.status; return map; }, {});
-         console.log(`<--- Found ${existingAttendance.length} existing records. Sending data.`);
+        res.status(200).json(formattedRecords);
 
-        // 5. Send response
-         res.status(200).json({ students: studentsInClass, attendanceStatus: attendanceStatusMap });
-
-    } catch (error) { console.error("!!! Error in fetchAttendanceForDate:", error); res.status(500).json({ message: "Server error fetching attendance data." }); }
+    } catch (error) {
+        console.error(`!!! [Report] Error fetching attendance report for class ${classId}, date ${date}:`, error);
+        res.status(500).json({ message: "Server error fetching report." });
+    }
 };
+
+// /**
+//  * @desc    Fetch student list for a class AND their attendance status for a specific date/subject/period
+//  * @route   GET /api/teacher/attendance?classId=...&subjectId=...&date=...&period=...
+//  * @access  Private (Teacher)
+//  */
+// const fetchAttendanceForDate = async (req, res) => {
+//     const { classId, date } = req.query;
+//     const teacherId = req.user.userId;
+//     console.log(`---> GET /api/teacher/attendance for Class: ${classId}, Date: ${date} by Teacher: ${teacherId}`);
+
+//     // --- Validations ---
+//     if (!classId || !date) return res.status(400).json({ message: "Missing params: classId, date." });
+//     // ... other validations for classId, date format ...
+//     let attendanceDate;
+//     try {
+//         const parts = date.split('-');
+//         attendanceDate = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 0, 0, 0, 0));
+//         if (isNaN(attendanceDate.getTime())) throw new Error('Invalid Date value');
+//     } catch(e){ return res.status(400).json({ message: e.message || 'Invalid Date value.' }); }
+
+
+//     try {
+//         // 1. Verify teacher owns class & get student IDs
+//         const targetClass = await Class.findOne({ _id: classId, teacher: teacherId }).select('students').lean();
+//         if (!targetClass) return res.status(404).json({ message: "Class not found or access denied." });
+
+//         const studentIdsInClass = targetClass.students || [];
+//         if (studentIdsInClass.length === 0) {
+//             console.log(`--- No students found in class ${classId}`);
+//             return res.status(200).json({ students: [], attendanceStatus: {} });
+//         }
+//         console.log(`--- Student IDs in class ${classId}:`, studentIdsInClass);
+
+//         // 2. Fetch student details - *** ENSURE PROFILE IS SELECTED ***
+//         const studentsInClass = await User.find({ _id: { $in: studentIdsInClass } })
+//             // *** Select the profile subdocument, and specifically fullName, or the whole profile ***
+//             .select('email profile.firstName profile.lastName profile.fullName username') // Add username as fallback
+//             .lean();
+//         console.log(`--- Fetched ${studentsInClass.length} student details.`);
+//         // studentsInClass.forEach(s => console.log(s.profile)); // Debug: check profile content
+
+//         // 3. Fetch existing attendance for these students ON THIS DATE ONLY
+//         const existingAttendance = await Attendance.find({
+//              date: attendanceDate,
+//              class: classId,
+//              student: { $in: studentIdsInClass }
+//         }).select('student status').lean();
+
+//         // 4. Create status map
+//         const attendanceStatusMap = existingAttendance.reduce((map, record) => {
+//             map[record.student.toString()] = record.status;
+//             return map;
+//         }, {});
+//         console.log(`<--- Found ${existingAttendance.length} existing attendance records.`);
+
+//         // 5. Send response
+//         res.status(200).json({ students: studentsInClass, attendanceStatus: attendanceStatusMap });
+
+//     } catch (error) {
+//         console.error("!!! Error in fetchAttendanceForDate:", error);
+//         res.status(500).json({ message: "Server error fetching attendance data." });
+//     }
+// };
 
 
 // Ensure you have also correctly defined and exported saveAttendance
@@ -1468,58 +1640,425 @@ const saveAttendance = async (req, res) => {
     } catch (error) { /* ... Error Handling ... */ }
 };
 
-// --- NEW/MODIFIED FUNCTION FOR REPORTS ---
+// // --- NEW/MODIFIED FUNCTION FOR REPORTS ---
+// /**
+//  * @desc    Get attendance records for a specific class on a specific date
+//  * @route   GET /api/teacher/attendance/reports/class/:classId?date=YYYY-MM-DD
+//  * @access  Private (Teacher)
+//  */
+// const getClassAttendanceReport = async (req, res) => {
+//     const { classId } = req.params;
+//     const { date } = req.query;
+//     const teacherId = req.user.userId;
+
+//     console.log(`---> GET Report for Class ${classId}, Date ${date} by Teacher ${teacherId}`);
+//     // ... (Validations for classId, date, attendanceDate conversion) ...
+//     if (!mongoose.Types.ObjectId.isValid(classId)) return res.status(400).json({ message: 'Invalid Class ID.' });
+//     if (!date) return res.status(400).json({ message: 'Date parameter is required.' });
+//     let attendanceDate;
+//     try { const parts = date.split('-'); attendanceDate = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]),0,0,0,0)); if (isNaN(attendanceDate.getTime())) throw new Error(); }
+//     catch(e){ return res.status(400).json({ message: 'Invalid Date value.' }); }
+
+
+//     try {
+//         // 1. Verify teacher owns class
+//         const targetClass = await Class.findOne({ _id: classId, teacher: teacherId }).select('_id').lean();
+//         if (!targetClass) return res.status(403).json({ message: "Access denied or class not found." });
+
+//         // 2. Fetch attendance records and populate student details
+//         // *** ENSURE POPULATE SELECTS CORRECT FIELDS ***
+//         const attendanceRecords = await Attendance.find({
+//              class: classId,
+//              date: attendanceDate
+//         })
+//         .populate({
+//             path: 'student', // Path to the 'student' field in Attendance model (which refs 'User')
+//             select: 'email profile.firstName profile.lastName profile.fullName username' // Explicitly select nested fields
+//         })
+//         .sort({ 'student.profile.fullName': 1 }) // Sort by populated student's full name
+//         .lean();
+
+//         console.log(`<--- Found ${attendanceRecords.length} attendance report records.`);
+//         // attendanceRecords.forEach(r => console.log(r.student?.profile)); // Debug: check profile content
+
+//         res.status(200).json(attendanceRecords);
+
+//      } catch (error) {
+//          console.error(`!!! Error fetching attendance report for class ${classId}, date ${date}:`, error);
+//          res.status(500).json({ message: "Server error fetching report." });
+//     }
+//  };
+
+
 /**
- * @desc    Get attendance records for a specific class on a specific date
- * @route   GET /api/teacher/attendance/reports/class/:classId?date=YYYY-MM-DD
+ * @desc    Create a new Quiz
+ * @route   POST /api/teacher/quizzes
  * @access  Private (Teacher)
+ * @body    { title, description?, classId, subjectId, timeLimitMinutes?, questions: [{questionText, options, correctAnswerIndex}] }
  */
-const getClassAttendanceReport = async (req, res) => {
-    const { classId } = req.params;
-    const { date } = req.query; // Get date from query string
-    const teacherId = req.user.userId;
+const createQuiz = async (req, res) => {
+    const {
+        title, description, classId, subjectId,
+        timeLimitMinutes, questions, status // status can be 'Draft' or 'Published' from frontend
+    } = req.body;
+    const teacherIdString = req.user?.userId; // From authMiddleware
 
-    console.log(`---> GET Report for Class ${classId}, Date ${date} by Teacher ${teacherId}`);
+    console.log(`[createQuiz] Attempt by Teacher: ${teacherIdString}`);
+    console.log("[createQuiz] Received Payload:", JSON.stringify(req.body, null, 2));
 
-    // Validations
-    if (!mongoose.Types.ObjectId.isValid(classId)) return res.status(400).json({ message: 'Invalid Class ID.' });
-    if (!date) return res.status(400).json({ message: 'Date parameter is required.' });
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/; if (!dateRegex.test(date)) return res.status(400).json({ message: 'Invalid Date format.' });
+    // --- 1. Validate Teacher ID ---
+    if (!teacherIdString || !mongoose.Types.ObjectId.isValid(teacherIdString)) {
+        console.error(`[createQuiz] Invalid Teacher ID: ${teacherIdString}`);
+        return res.status(401).json({ message: "Authentication error: Invalid user identifier." });
+    }
+    const teacherObjectId = new mongoose.Types.ObjectId(teacherIdString);
 
-     let attendanceDate; // Convert date string
-    try { const parts = date.split('-'); attendanceDate = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 0, 0, 0, 0)); if (isNaN(attendanceDate.getTime())) throw new Error(); }
-    catch(e){ return res.status(400).json({ message: 'Invalid Date value.' }); }
+    // --- 2. Validate Payload ---
+    let validationErrors = [];
+    if (!title?.trim()) validationErrors.push("Quiz Title is required.");
+    if (!classId || !mongoose.Types.ObjectId.isValid(classId)) validationErrors.push("Valid Class selection is required.");
+    if (!subjectId || !mongoose.Types.ObjectId.isValid(subjectId)) validationErrors.push("Valid Subject selection is required.");
+    if (!Array.isArray(questions) || questions.length === 0) {
+        validationErrors.push('Quiz needs at least one question.');
+    } else {
+        questions.forEach((q, i) => {
+            const num = i + 1;
+            if (!q || typeof q !== 'object') { validationErrors.push(`Data missing for question #${num}.`); return; }
+            if (!q.questionText?.trim()) validationErrors.push(`Text missing for question #${num}.`);
+            if (!Array.isArray(q.options) || q.options.length < 2) { validationErrors.push(`At least 2 options needed for question #${num}.`); }
+            else {
+                const nonEmptyOptions = q.options.filter(opt => typeof opt === 'string' && opt.trim());
+                if (nonEmptyOptions.length < 2) validationErrors.push(`At least 2 non-empty options needed for question #${num}.`);
+                if (q.correctAnswerIndex === undefined || q.correctAnswerIndex === null || typeof q.correctAnswerIndex !== 'number' || q.correctAnswerIndex < 0 || q.correctAnswerIndex >= q.options.length) {
+                    validationErrors.push(`Valid correct answer selection needed for question #${num}.`);
+                } else if (!q.options[q.correctAnswerIndex]?.trim()) { // Check if selected option is empty
+                    validationErrors.push(`Selected correct answer for question #${num} cannot be empty.`);
+                }
+            }
+        });
+    }
+    if (timeLimitMinutes && (isNaN(Number(timeLimitMinutes)) || Number(timeLimitMinutes) <= 0)) {
+        validationErrors.push('Time limit must be a positive number.');
+    }
+    // Status validation (allow only Draft or Published on creation)
+    const finalStatus = (status === 'Published') ? 'Published' : 'Draft';
+
+    if (validationErrors.length > 0) {
+        console.warn("[createQuiz] Validation Failed:", validationErrors);
+        return res.status(400).json({ message: validationErrors.join(' ') });
+    }
+
+    // --- 3. Perform Database Operations ---
+    try {
+        // Verify Class ownership and find Subject Name
+        const targetClass = await Class.findOne({ _id: classId, teacher: teacherObjectId }).select('subjects name');
+        if (!targetClass) {
+            console.warn(`[createQuiz] Class ${classId} not found or not owned by teacher ${teacherObjectId}`);
+            return res.status(403).json({ message: "Class not found or access denied." }); // 403 more appropriate than 404
+        }
+
+        const targetSubject = targetClass.subjects.find(subj => subj._id.equals(subjectId));
+        if (!targetSubject) {
+             console.warn(`[createQuiz] Subject ${subjectId} not found within class ${classId}`);
+            return res.status(400).json({ message: "Selected subject not found within the specified class." }); // 400 as input is bad
+        }
+        const subjectName = targetSubject.name; // Get name
+
+        // Prepare document data
+        const quizDocData = {
+            title: title.trim(),
+            description: description ? description.trim() : '',
+            classId,
+            subjectId,
+            subjectName: subjectName, // Add subject name
+            teacher: teacherObjectId, // Use correct field name and ObjectId
+            timeLimitMinutes: timeLimitMinutes ? Number(timeLimitMinutes) : null,
+            questions: questions.map(q => ({ // Sanitize question data
+                 questionText: q.questionText.trim(),
+                 options: q.options.map(opt => (opt || '').trim()),
+                 correctAnswerIndex: q.correctAnswerIndex
+             })),
+            status: finalStatus,
+        };
+
+        console.log("[createQuiz] Attempting to save document...");
+        const newQuiz = new Quiz(quizDocData);
+        const savedQuiz = await newQuiz.save(); // Save to DB
+
+        console.log(`<--- [createQuiz] Success! Quiz ID: ${savedQuiz._id}, Status: ${finalStatus}`);
+
+        // Manually structure response data (including populated-like class info)
+        const responseData = {
+             ...savedQuiz.toObject(), // Convert Mongoose doc to plain object
+             classId: { _id: targetClass._id, name: targetClass.name } // Add class info
+        };
+        delete responseData.__v; // Remove version key
+
+        res.status(201).json(responseData); // Return created quiz
+
+    } catch (error) {
+        console.error(`!!! [createQuiz] Error during DB operation for teacher ${teacherObjectId}:`, error);
+        if (error.name === 'ValidationError') {
+            console.error("--- Mongoose Validation Errors ---:", error.errors);
+            const messages = Object.values(error.errors).map(e => e.message).join('. ');
+            return res.status(400).json({ message: `Validation Error: ${messages}` });
+        }
+        // General server error
+        res.status(500).json({ message: "Server error while saving the quiz." });
+    }
+};
+
+// --- Make sure getQuizzesByTeacher is also exported correctly in module.exports ---
+// const getQuizzesByTeacher = async (req, res) => { ... };
+
+
+/**
+ * @desc    Get quizzes created by the logged-in teacher
+ * @route   GET /api/teacher/quizzes
+ * @access  Private (Teacher)
+ * @query   classId?, subjectId?, status? (Optional filters)
+ */
+const getQuizzesByTeacher = async (req, res) => {
+    const teacherIdString = req.user?.userId; // Get ID string
+
+    // --- Validate Teacher ID ---
+    if (!teacherIdString || !mongoose.Types.ObjectId.isValid(teacherIdString)) {
+        console.error(`!!! Invalid or missing teacherId in getQuizzesByTeacher: ${teacherIdString}`);
+        return res.status(401).json({ message: "Authentication error: User identifier invalid." });
+    }
+    // --- Convert teacherId string to ObjectId for querying ---
+    const teacherObjectId = new mongoose.Types.ObjectId(teacherIdString);
+    // -------------------------------------------------------
+
+    const { classId, subjectId, status } = req.query;
+    console.log(`---> GET /api/teacher/quizzes requested by Teacher ${teacherObjectId}`, req.query);
 
     try {
-        // 1. Verify teacher owns class (important for reports)
-        const targetClass = await Class.findOne({ _id: classId, teacher: teacherId }).select('_id');
-        if (!targetClass) return res.status(403).json({ message: "Access denied or class not found." });
+        // --- Use ObjectId in the query ---
+        const query = { teacher: teacherObjectId }; // <-- Use the converted ObjectId
+        // ---------------------------------
 
-        // 2. Fetch attendance records for that class on that date
-        // Populate student details directly here
-        const attendanceRecords = await Attendance.find({
-             class: classId,
-             date: attendanceDate
-        })
-        .populate({
-            path: 'student', // Populate the 'student' field in Attendance model
-            select: 'email profile.fullName profile.phone' // Select email AND fields inside the 'profile' subdocument
-        })
-       // -------------------------
-        .sort({'student.profile.fullName': 1})
-        .lean();
-        console.log(`<--- Found ${attendanceRecords.length} report records.`);
-         // The structure now is [{ ..., student: { profile: {fullName:...}, email:... }, status: '...' }]
+        // Apply filters
+        if (classId && mongoose.Types.ObjectId.isValid(classId)) {
+            query.classId = classId;
+        }
+        if (subjectId && mongoose.Types.ObjectId.isValid(subjectId)) {
+            query.subjectId = subjectId;
+        }
+        if (status && ['Draft', 'Published', 'Closed'].includes(status)) {
+            query.status = status;
+        }
 
-        res.status(200).json(attendanceRecords);
+        console.log("--- Backend: Querying quizzes with:", query);
 
-     } catch (error) {
-         console.error(`!!! Error fetching attendance report for class ${classId}, date ${date}:`, error);
-         res.status(500).json({ message: "Server error fetching report." });
+        // Execute query
+        const quizzes = await Quiz.find(query)
+            .populate('classId', 'name') // Populate class name
+            .sort({ createdAt: -1 })     // Sort newest first
+            .lean();                     // Use lean for plain JS objects
+
+        console.log(`--- Backend: Found ${quizzes.length} quizzes in DB for query.`);
+        if (quizzes.length > 0) {
+             // Log first quiz details to verify structure and population
+             console.log("--- Backend: First quiz details (sample):", JSON.stringify(quizzes[0], null, 2));
+        }
+
+        res.status(200).json(quizzes); // Send the result (even if empty array)
+
+    } catch (error) {
+        console.error(`!!! Backend Error in getQuizzesByTeacher for teacher ${teacherObjectId}:`, error);
+        res.status(500).json({ message: "Server error fetching quizzes." });
     }
- };
+};
 
+/**
+ * @desc    Update Quiz Status (e.g., Publish a Draft)
+ * @route   PUT /api/teacher/quizzes/:quizId/status
+ * @access  Private (Teacher)
+ * @body    { status: 'Published' | 'Closed' | 'Draft' }
+ */
+const updateQuizStatus = async (req, res) => {
+    const { quizId } = req.params;
+    const { status } = req.body;
+    const teacherId = req.user?.userId; // <-- Get ID string into 'teacherId' variable
 
+    console.log(`---> PUT /api/teacher/quizzes/${quizId}/status by Teacher ${teacherId}`);
+    console.log("--- Payload:", req.body);
+
+    // Validate input
+    if (!mongoose.Types.ObjectId.isValid(quizId)) {
+        return res.status(400).json({ message: 'Invalid Quiz ID format.' });
+    }
+    if (!status || !['Published', 'Closed', 'Draft'].includes(status)) {
+        return res.status(400).json({ message: 'Invalid or missing status provided.' });
+    }
+    // *** FIX: Validate teacherId (the string) BEFORE converting ***
+    if (!teacherId || !mongoose.Types.ObjectId.isValid(teacherId)) {
+        console.error(`!!! Invalid or missing teacherId in updateQuizStatus: ${teacherId}`);
+        return res.status(401).json({ message: "Authentication error: Invalid user identifier." });
+    }
+    // *** FIX: Convert the correct variable 'teacherId' ***
+    const teacherObjectId = new mongoose.Types.ObjectId(teacherId);
+    // *********************************************************
+
+    try {
+        // Find the quiz ensuring it belongs to the teacher
+        // *** FIX: Use teacherObjectId in the query ***
+        const quiz = await Quiz.findOne({ _id: quizId, teacher: teacherObjectId });
+
+        if (!quiz) {
+            console.warn(`Quiz ${quizId} not found or not owned by teacher ${teacherObjectId}`);
+            return res.status(404).json({ message: 'Quiz not found or access denied.' });
+        }
+
+        // Prevent certain status changes if needed (example: cannot re-publish a closed quiz directly)
+        if (quiz.status === 'Closed' && status === 'Published') {
+             return res.status(400).json({ message: 'Cannot directly re-publish a closed quiz.' });
+        }
+
+        // Update status & potentially publishDate
+        quiz.status = status;
+        if (status === 'Published' && !quiz.publishDate) { // Set publish date only if newly published
+            quiz.publishDate = new Date();
+            console.log(`--- Setting publishDate for quiz ${quizId}`);
+        }
+
+        const updatedQuiz = await quiz.save(); // Save changes
+
+        // Populate class name for response
+        const populatedQuiz = await Quiz.findById(updatedQuiz._id)
+                                        .populate('classId', 'name')
+                                        .lean();
+
+        console.log(`<--- Quiz ${quizId} status updated to ${status} successfully.`);
+        res.status(200).json(populatedQuiz); // Send back updated quiz
+
+    } catch (error) {
+        console.error(`!!! Error updating status for quiz ${quizId}:`, error);
+        if (error.name === 'ValidationError') { /* ... */ }
+        res.status(500).json({ message: 'Server error updating quiz status.' });
+    }
+};
+
+// --- NEW FUNCTION ---
+/**
+ * @desc    Delete a Quiz
+ * @route   DELETE /api/teacher/quizzes/:quizId
+ * @access  Private (Teacher)
+ */
+const deleteQuiz = async (req, res) => {
+    const { quizId } = req.params;
+    const teacherId = req.user?.userId; // <-- Get ID string into 'teacherId' variable
+
+    console.log(`---> DELETE /api/teacher/quizzes/${quizId} by Teacher ${teacherId}`);
+
+    // Validate IDs
+    if (!mongoose.Types.ObjectId.isValid(quizId)) {
+        return res.status(400).json({ message: 'Invalid Quiz ID format.' });
+    }
+    // *** FIX: Validate teacherId (the string) BEFORE converting ***
+    if (!teacherId || !mongoose.Types.ObjectId.isValid(teacherId)) {
+         console.error(`!!! Invalid or missing teacherId in deleteQuiz: ${teacherId}`);
+         return res.status(401).json({ message: "Authentication error: Invalid user identifier." });
+    }
+    // *** FIX: Convert the correct variable 'teacherId' ***
+    const teacherObjectId = new mongoose.Types.ObjectId(teacherId);
+    // *********************************************************
+
+    try {
+        // Find the quiz and delete it, ensuring it belongs to the teacher
+        // *** FIX: Use teacherObjectId in the query ***
+        const quizToDelete = await Quiz.findOneAndDelete({
+             _id: quizId,
+             teacher: teacherObjectId // Ensure only the owner can delete
+             // Optional: Add status check here if desired
+             // status: { $in: ['Draft', 'Closed'] }
+        });
+
+        if (!quizToDelete) {
+            console.warn(`Quiz ${quizId} not found for deletion or access denied for teacher ${teacherObjectId}`);
+            return res.status(404).json({ message: 'Quiz not found or you do not have permission to delete it.' });
+        }
+
+        // TODO Optional: Delete associated QuizAttempt results
+        // await QuizAttempt.deleteMany({ quizId: quizId });
+
+        console.log(`<--- Quiz ${quizId} deleted successfully.`);
+        res.status(200).json({ success: true, message: 'Quiz deleted successfully.' });
+
+    } catch (error) {
+        console.error(`!!! Error deleting quiz ${quizId}:`, error);
+        res.status(500).json({ message: 'Server error while deleting the quiz.' });
+    }
+};
+
+// --- NEW FUNCTION ---
+/**
+ * @desc    Get Results for a specific Quiz (Attempts with Student Info)
+ * @route   GET /api/teacher/quizzes/:quizId/results
+ * @access  Private (Teacher)
+ */
+const getQuizResults = async (req, res) => {
+    const { quizId } = req.params;
+    const teacherIdString = req.user?.userId; // Use correct variable from middleware
+
+    console.log(`---> GET /api/teacher/quizzes/${quizId}/results by Teacher ${teacherIdString}`);
+
+    // Validate IDs
+    if (!mongoose.Types.ObjectId.isValid(quizId)) { return res.status(400).json({ message: 'Invalid Quiz ID format.' }); }
+    if (!teacherIdString || !mongoose.Types.ObjectId.isValid(teacherIdString)) { return res.status(401).json({ message: "Authentication error: Invalid user identifier." }); }
+    const teacherObjectId = new mongoose.Types.ObjectId(teacherIdString);
+
+    try {
+        // 1. Find the quiz, verify ownership, and SELECT totalMarks explicitly
+        console.log(`--- [QuizResults] Fetching quiz details for ${quizId}`);
+        const quiz = await Quiz.findOne({ _id: quizId, teacher: teacherObjectId })
+                             // *** Ensure totalMarks is selected ***
+                             .select('title subjectName totalMarks classId')
+                             .populate('classId', 'name') // Populate class name
+                             .lean();
+
+        if (!quiz) {
+            console.warn(`Quiz ${quizId} not found or not owned by teacher ${teacherObjectId}`);
+            return res.status(404).json({ message: 'Quiz not found or access denied.' });
+        }
+        // Log the fetched quiz details, including totalMarks
+        console.log(`--- [QuizResults] Found Quiz Details: Title: ${quiz.title}, Class: ${quiz.classId?.name}, Subject: ${quiz.subjectName}, Total Marks: ${quiz.totalMarks}`);
+        // Check if totalMarks is missing from the quiz document itself
+        if (quiz.totalMarks === undefined || quiz.totalMarks === null) {
+             console.warn(`!!! Quiz document ${quizId} is missing the 'totalMarks' field!`);
+             // Optionally set a default if appropriate, or handle in frontend
+        }
+
+        // 2. Find all attempts for this quiz, selecting necessary fields
+        console.log(`--- [QuizResults] Fetching attempts for Quiz ID: ${quizId}`);
+        const attempts = await QuizAttempt.find({ quizId: quizId })
+            // Populate student details
+            .populate({
+                path: 'studentId',
+                select: 'profile.fullName email username' // Select fields needed for display
+            })
+            // *** Ensure all required attempt fields are selected ***
+            .select('studentId score totalQuestions percentage submittedAt createdAt')
+            .sort({ submittedAt: -1 }) // Sort by submission time
+            .lean();
+
+        console.log(`--- [QuizResults] Found ${attempts.length} attempts.`);
+        if (attempts.length > 0) {
+            console.log("--- [QuizResults] First attempt sample:", JSON.stringify(attempts[0], null, 2));
+        }
+
+        // 3. Combine quiz details and attempts in the response
+        res.status(200).json({
+            quizDetails: quiz, // Contains title, subjectName, totalMarks, classId { _id, name }
+            attempts: attempts // Contains populated studentId, score, totalQuestions, percentage, submittedAt etc.
+        });
+
+    } catch (error) {
+        console.error(`!!! Error fetching results for quiz ${quizId}:`, error);
+        res.status(500).json({ message: 'Server error fetching quiz results.' });
+    }
+};
 
 
 // --- *** Update Exports *** ---
@@ -1550,6 +2089,11 @@ module.exports = {
   fetchAttendanceForDate, // <-- ADD or Ensure correct name
   saveAttendance,   
   getClassAttendanceReport,
+  createQuiz,             // <-- ADD
+  getQuizzesByTeacher, 
+  updateQuizStatus, // <-- ADDED
+  deleteQuiz, 
+  getQuizResults,
   // Keep upload instance
   uploadImage,
   uploadDocument 

@@ -1,0 +1,123 @@
+// src/App.jsx
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { ProfileProvider } from "./context/ProfileContext"; // Import Provider
+
+// --- Import Page/Layout Components ---
+import Home from "./pages/Home";
+import AuthForm from "./pages/AuthForm";
+import Dashboard from "./pages/Dashboard"; // Generic/Public?
+import NotFound from "./pages/NotFound";
+// *** IMPORTANT: Adjust this path if your ProtectedRoute is elsewhere ***
+import ProtectedRoute from "./components/ProtectedRoute";
+
+// --- Admin Imports ---
+import AdminDashboard from "./adminSide/AdminDashboard";
+
+// --- Student Imports ---
+import StudentLayout from "./studentSide/StudentLayout";
+import StudentDashboard from "./studentSide/StudentDashboard";
+import StudentProfile from "./studentSide/StudentProfile";
+// *** IMPORTANT: Ensure you renamed TeacherAddStudent.jsx to StudentEditProfile.jsx ***
+import StudentEditProfile from "./studentSide/StudentEditProfile";
+import StudentSubjects from "./studentSide/StudentSubjects";
+import StudentGrades from "./studentSide/StudentGrades";
+import StudentAttendance from "./studentSide/StudentAttendance";
+
+// --- Teacher Imports ---
+import TeacherLayout from "./teacherSide/TeacherLayout";
+import TeacherDashboard from "./teacherSide/TeacherDashboard";
+import TeacherMainProfile from "./teacherSide/TeacherMainProfile";
+import TeacherEditProfile from "./teacherSide/TeacherEditProfile";
+import TeacherClasses from "./teacherSide/TeacherClasses";
+import TeacherViewSubjects from "./teacherSide/TeacherViewSubjects";
+import TeacherUploadSyllabus from "./teacherSide/TeacherUploadSyllabus";
+import TeacherUploadMaterials from "./teacherSide/TeacherUploadMaterials";
+import TeacherMarkAttendance from "./teacherSide/TeacherMarkAttendance";
+import TeacherViewAttendanceReports from "./teacherSide/TeacherViewAttendanceReports";
+import TeacherViewStudentDetails from "./teacherSide/TeacherViewStudentDetails"; // Make sure this exists
+// Add any other teacher imports if needed
+
+function App() {
+  return (
+    <Router>
+      <Routes>
+        {/* ======================================== */}
+        {/*          🌍 PUBLIC ROUTES                */}
+        {/* ======================================== */}
+        <Route path="/" element={<Home />} />
+        <Route path="/AuthForm" element={<AuthForm />} />
+        <Route path="/Dashboard" element={<Dashboard />} />
+
+        {/* ======================================== */}
+        {/*          🔒 ADMIN ROUTES                 */}
+        {/* ======================================== */}
+        <Route element={<ProtectedRoute allowedUserType="admin" />}>
+          {/* Example: If Admin has its own provider and layout */}
+          {/* <AdminProvider><Route path="/admin" element={<AdminLayout />}>...</Route></AdminProvider> */}
+          <Route path="/admin/dashboard" element={<AdminDashboard />} />
+        </Route>
+
+        {/* ======================================== */}
+        {/*          🔒 TEACHER ROUTES               */}
+        {/* ======================================== */}
+        <Route element={<ProtectedRoute allowedUserType="teacher" />}>
+          {/* Wrap the TeacherLayout ELEMENT with the Provider */}
+          <Route
+            path="/teacher"
+            element={
+              <ProfileProvider>
+                <TeacherLayout />
+              </ProfileProvider>
+            }
+          >
+            {/* Nested teacher routes are now children of ProfileProvider */}
+            <Route index element={<TeacherDashboard />} /> {/* Default for /teacher */}
+            <Route path="teacherDashboard" element={<TeacherDashboard />} />
+            <Route path="TeacherMainProfile" element={<TeacherMainProfile />} />
+            <Route path="TeacherEditProfile" element={<TeacherEditProfile />} />
+            <Route path="TeacherClasses" element={<TeacherClasses />} />
+            <Route path="TeacherViewSubjects" element={<TeacherViewSubjects />} />
+            <Route path="TeacherUploadSyllabus" element={<TeacherUploadSyllabus />} />
+            <Route path="TeacherUploadMaterials" element={<TeacherUploadMaterials />} />
+            <Route path="TeacherMarkAttendance" element={<TeacherMarkAttendance />} />
+            <Route path="TeacherViewAttendanceReports" element={<TeacherViewAttendanceReports />} />
+            <Route path="students/:studentId/profile" element={<TeacherViewStudentDetails />} />
+            {/* Add other teacher component routes here */}
+            {/* <Route path="TeacherCreateAssignments" element={<TeacherCreateAssignments />} /> */}
+            {/* <Route path="TeacherEvaluateAssignments" element={<TeacherEvaluateAssignments />} /> */}
+            {/* <Route path="TeacherUploadMarks" element={<TeacherUploadMarks />} /> */}
+
+            {/* Catch-all for invalid /teacher paths */}
+            <Route path="*" element={<NotFound message="Teacher resource not found" />} />
+          </Route>
+        </Route>
+
+        {/* ======================================== */}
+        {/*          🔒 STUDENT ROUTES               */}
+        {/* ======================================== */}
+        <Route element={<ProtectedRoute allowedUserType="student" />}>
+          {/* Apply Provider similarly if Student needs shared state later */}
+          {/* <StudentProfileProvider> */}
+          <Route path="/student" element={<StudentLayout />}>
+            <Route index element={<StudentDashboard />} />
+            <Route path="studentDashboard" element={<StudentDashboard />} />
+            <Route path="StudentProfile" element={<StudentProfile />} />
+            <Route path="StudentEditProfile" element={<StudentEditProfile />} />
+            <Route path="StudentSubjects" element={<StudentSubjects />} />
+            <Route path="StudentGrades" element={<StudentGrades />} />
+            <Route path="StudentAttendance" element={<StudentAttendance />} />
+            <Route path="*" element={<NotFound message="Student resource not found" />} />
+          </Route>
+          {/* </StudentProfileProvider> */}
+        </Route>
+
+        {/* ======================================== */}
+        {/*          🚨 404 NOT FOUND ROUTE          */}
+        {/* ======================================== */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </Router>
+  );
+}
+
+export default App;
