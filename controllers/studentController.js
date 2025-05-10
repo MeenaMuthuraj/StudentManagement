@@ -6,7 +6,7 @@ const QuizAttempt = require('../models/QuizAttempt'); // Ensure this is added if
 const mongoose = require('mongoose');
 const fs = require('fs').promises; // Use promise-based fs for async/await
 const path = require('path');
-
+const Attendance = require('../models/Attendance');
 // Define upload directory path (should be consistent across controllers needing it)
 // Adjust the path based on your project structure relative to this controller file
 const uploadDir = path.join(__dirname, '..', 'uploads');
@@ -664,7 +664,241 @@ const submitQuizAttempt = async (req, res) => {
     }
 };
 
+// --- NEW FUNCTION for Student's Own Attendance ---
+/**
+ * @desc    Get all attendance records for the logged-in student
+ * @route   GET /api/student/my-attendance
+ * @access  Private (Student)
+ * @query   startDate?, endDate? (Optional for date range filtering later)
+ */
+const getStudentAttendanceRecords = async (req, res) => {
+    const studentId = req.user?.userId;
 
+    if (!studentId || !mongoose.Types.ObjectId.isValid(studentId)) {
+        console.error("!!! Invalid or missing Student ID in getStudentAttendanceRecords.");
+        return res.status(401).json({ message: "Authentication error: Invalid user identifier." });
+    }
+
+    console.log(`---> GET /api/student/my-attendance requested by Student ${studentId}`);
+
+    try {
+        // For now, fetch all records. Date filtering can be added later via query params.
+        const query = { student: studentId };
+
+        // Example: Add date range filtering if startDate and endDate are provided
+        // if (req.query.startDate && req.query.endDate) {
+        //     query.date = {
+        //         $gte: new Date(req.query.startDate),
+        //         $lte: new Date(req.query.endDate)
+        //     };
+        // }
+
+        console.log("--- Backend Query for Student Attendance:", JSON.stringify(query));
+
+        const attendanceRecords = await Attendance.find(query)
+            .select('date status class subjectId remark') // Select fields needed for student view
+            .populate('class', 'name') // Populate class name (field in Attendance is 'class')
+            // Subject name is harder to populate directly if subjectId refers to an embedded doc.
+            // For now, we might just show subjectId or omit subject details if not easily available.
+            // If you store subjectName directly in Attendance model, that's easier.
+            .sort({ date: -1 }) // Show most recent first, or 'asc' for oldest first
+            .lean();
+
+        console.log(`--- Found ${attendanceRecords.length} attendance records for student ${studentId}.`);
+        if (attendanceRecords.length > 0) {
+            console.log("--- First attendance record sample:", JSON.stringify(attendanceRecords[0], null, 2));
+        }
+
+        res.status(200).json(attendanceRecords);
+
+    } catch (error) {
+        console.error(`!!! Error fetching attendance for student ${studentId}:`, error);
+        res.status(500).json({ message: "Server error fetching your attendance records." });
+    }
+};
+
+// --- NEW FUNCTION for Student's Quiz Attempts/Grades ---
+/**
+ * @desc    Get all quiz attempts (grades) for the logged-in student
+ * @route   GET /api/student/my-quiz-attempts
+ * @access  Private (Student)
+ */
+const getStudentQuizAttempts = async (req, res) => {
+    const studentId = req.user?.userId;
+
+    if (!studentId || !mongoose.Types.ObjectId.isValid(studentId)) {
+        console.error("!!! Invalid or missing Student ID in getStudentQuizAttempts.");
+        return res.status(401).json({ message: "Authentication error: Invalid user identifier." });
+    }
+
+    console.log(`---> GET /api/student/my-quiz-attempts requested by Student ${studentId}`);
+
+    try {
+        const attempts = await QuizAttempt.find({ studentId: studentId })
+            .populate({
+                path: 'quizId', // Populate details from the Quiz document
+                select: 'title subjectName totalMarks classId', // Select specific fields from Quiz
+                populate: { // Nested populate for class name within quiz
+                    path: 'classId',
+                    select: 'name'
+                }
+            })
+            .select('quizId score totalQuestions percentage submittedAt') // Select fields from QuizAttempt
+            .sort({ submittedAt: -1 }) // Show most recent attempts first
+            .lean();
+
+        console.log(`--- Found ${attempts.length} quiz attempts for student ${studentId}.`);
+        if (attempts.length > 0) {
+            console.log("--- First quiz attempt sample:", JSON.stringify(attempts[0], null, 2));
+        }
+
+        // Transform data slightly for easier frontend consumption if needed
+        const formattedAttempts = attempts.map(attempt => {
+            if (!attempt.quizId) { // Defensive check if quiz was deleted but attempt remains
+                return {
+                    _id: attempt._id,
+                    quizTitle: "Quiz (Details Unavailable)",
+                    subjectName: "N/A",
+                    className: "N/A",
+                    dateSubmitted: attempt.submittedAt,
+                    score: attempt.score,
+                    totalQuestions: attempt.totalQuestions,
+                    percentage: attempt.percentage,
+                };
+            }
+            return {
+                _id: attempt._id, // Attempt ID
+                quizId: attempt.quizId._id, // Actual Quiz ID
+                quizTitle: attempt.quizId.title,
+                subjectName: attempt.quizId.subjectName,
+                className: attempt.quizId.classId?.name || "N/A",
+                dateSubmitted: attempt.submittedAt,
+                score: attempt.score,
+                totalQuestions: attempt.totalQuestions, // This is quiz.questions.length at time of attempt
+                quizTotalMarks: attempt.quizId.totalMarks, // Original total marks of the quiz
+                percentage: attempt.percentage,
+            };
+        });
+
+        res.status(200).json(formattedAttempts);
+
+    } catch (error) {
+        console.error(`!!! Error fetching quiz attempts for student ${studentId}:`, error);
+        res.status(500).json({ message: "Server error fetching your quiz grades." });
+    }
+};
+
+// --- NEW FUNCTION for Student Dashboard Summary ---
+/**
+ * @desc    Get summary data for the student dashboard
+ * @route   GET /api/student/dashboard-summary
+ * @access  Private (Student)
+ */
+const getStudentDashboardSummary = async (req, res) => {
+    const studentId = req.user?.userId;
+    if (!studentId || !mongoose.Types.ObjectId.isValid(studentId)) { /* ... error ... */ }
+    const studentObjectId = new mongoose.Types.ObjectId(studentId);
+    console.log(`---> [DASHBOARD] Summary for Student ${studentObjectId}`);
+
+    try {
+        const studentDoc = await User.findById(studentObjectId).select('enrolledClasses profile.firstName username').lean();
+        if (!studentDoc) { /* ... error ... */ }
+        const enrolledClassIds = studentDoc.enrolledClasses || [];
+
+        // --- Attendance & Avg. Score (Keep as before) ---
+        // ... calculation for overallAttendancePercentage, presentAndLateDays, absentDays, totalRecordedAttendanceDays ...
+        // ... calculation for averageQuizScore ...
+        const attendanceRecords = await Attendance.find({ student: studentObjectId }).select('status').lean();
+        let presentAndLateCount = 0; let absentCount = 0;
+        attendanceRecords.forEach(r => { if (r.status === 'present' || r.status === 'late') presentAndLateCount++; else if (r.status === 'absent') absentCount++; });
+        const totalRecordedAttendanceDays = attendanceRecords.length;
+        const overallAttendancePercentage = totalRecordedAttendanceDays > 0 ? Math.round((presentAndLateCount / totalRecordedAttendanceDays) * 100) : 0;
+
+        const quizAttemptsForAvg = await QuizAttempt.find({ studentId: studentObjectId }).select('percentage quizId').lean(); // Renamed for clarity
+        let totalPercentageSum = 0;
+        quizAttemptsForAvg.forEach(att => { totalPercentageSum += att.percentage; });
+        const averageQuizScore = quizAttemptsForAvg.length > 0 ? Math.round(totalPercentageSum / quizAttemptsForAvg.length) : 0;
+
+
+        // --- Unattempted Quizzes (Top 3 for "To Do" list - Keep this logic) ---
+        const now = new Date();
+        let availableQuizzes = [];
+        if (enrolledClassIds.length > 0) {
+            const finalQuizQuery = {
+                classId: { $in: enrolledClassIds }, status: 'Published',
+                $and: [
+                    { $or: [ { publishDate: null }, { publishDate: { $lte: now } } ] },
+                    { $or: [ { dueDate: null }, { dueDate: { $gte: now } } ] }
+                ]
+            };
+            availableQuizzes = await Quiz.find(finalQuizQuery)
+                .select('title subjectName dueDate classId questions')
+                .populate('classId', 'name')
+                .sort({ dueDate: 1, createdAt: -1 })
+                .lean();
+        }
+        const attemptedQuizIds = new Set(quizAttemptsForAvg.map(attempt => attempt.quizId.toString()));
+        const upcomingQuizzesList = availableQuizzes
+            .filter(quiz => !attemptedQuizIds.has(quiz._id.toString()))
+            .slice(0, 3);
+        const unattemptedQuizzesCount = availableQuizzes.filter(quiz => !attemptedQuizIds.has(quiz._id.toString())).length;
+
+
+        // --- Recent Grades (Last 5 attempts, ensure full quiz title) ---
+        const recentAttemptsFull = await QuizAttempt.find({ studentId: studentObjectId })
+            .sort({ submittedAt: -1 })
+            .limit(5)
+            .populate({ // Populate quiz details for each attempt
+                path: 'quizId',
+                select: 'title subjectName classId', // Get necessary fields
+                populate: { path: 'classId', select: 'name' } // Nested populate for class name
+            })
+            .select('quizId score totalQuestions percentage submittedAt')
+            .lean();
+
+        const formattedRecentGrades = recentAttemptsFull.map(attempt => ({
+            attemptId: attempt._id, // Useful for linking to detailed results later
+            quizId: attempt.quizId?._id,
+            quizTitle: attempt.quizId?.title || "Quiz (No Title)",
+            subjectName: attempt.quizId?.subjectName || "N/A",
+            className: attempt.quizId?.classId?.name || "N/A",
+            score: attempt.score,
+            totalQuestions: attempt.totalQuestions,
+            percentage: attempt.percentage,
+            dateSubmitted: attempt.submittedAt,
+        }));
+
+        // --- Subject List for Quick Access (derived from attempted and available quizzes) ---
+        const studentSubjectsSet = new Set();
+        // Add from attempted quizzes
+        recentAttemptsFull.forEach(attempt => {
+            if (attempt.quizId?.subjectName) studentSubjectsSet.add(attempt.quizId.subjectName);
+        });
+        // Add from available quizzes (if any)
+        availableQuizzes.forEach(quiz => {
+            if (quiz.subjectName) studentSubjectsSet.add(quiz.subjectName);
+        });
+        const subjectsForQuickAccess = Array.from(studentSubjectsSet).sort().slice(0, 5); // Limit to 5 for display
+
+        const summary = {
+            studentInfo: { firstName: studentDoc.profile?.firstName, username: studentDoc.username },
+            kpis: {
+                overallAttendancePercentage, presentAndLateDays: presentAndLateCount, absentDays: absentCount, totalRecordedAttendanceDays,
+                averageQuizScore, unattemptedQuizzesCount,
+                subjectsEnrolledCount: subjectsForQuickAccess.length, // Count unique subjects seen
+            },
+            upcomingQuizzes: upcomingQuizzesList, // This is still useful for "To Do"
+            recentGrades: formattedRecentGrades, // For "Recent Performance"
+            subjectsForAccess: subjectsForQuickAccess, // For "Quick Access to Subjects"
+        };
+
+        res.status(200).json(summary);
+
+    } catch (error) {
+        console.error(`!!! [DASHBOARD] Error fetching summary for student ${studentId}:`, error);
+        res.status(500).json({ message: "Server error fetching dashboard data." });
+    }
+};
 
 // --- Export all controller functions ---
 module.exports = {
@@ -675,5 +909,8 @@ module.exports = {
     getStudentSubjectsAndMaterials,
     getPublishedQuizzesForStudent, // <-- ADDED
     getQuizForTaking,             // <-- ADDED
-    submitQuizAttempt  
+    submitQuizAttempt,
+    getStudentAttendanceRecords,
+    getStudentQuizAttempts,
+    getStudentDashboardSummary  
 };

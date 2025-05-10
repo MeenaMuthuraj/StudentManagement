@@ -13,7 +13,10 @@ const { // Controller Functions
     getStudentSubjectsAndMaterials,
     getPublishedQuizzesForStudent,
     getQuizForTaking,
-    submitQuizAttempt
+    submitQuizAttempt,
+    getStudentAttendanceRecords,
+    getStudentQuizAttempts,
+    getStudentDashboardSummary
 } = require('../controllers/studentController');
 const authMiddleware = require('../middleware/authMiddleware');
 
@@ -160,5 +163,7 @@ router.get('/quizzes/:quizId/take', authMiddleware, getQuizForTaking);
 router.post('/quizzes/:quizId/submit', authMiddleware, submitQuizAttempt);
 
 // ========================================
-
+router.get('/my-attendance', getStudentAttendanceRecords);
+router.get('/my-quiz-attempts', getStudentQuizAttempts);
+router.get('/dashboard-summary', getStudentDashboardSummary);
 module.exports = router; // Export the configured router

@@ -31,6 +31,7 @@ const {
     getQuizzesByTeacher,
     updateQuizStatus,  // <-- ADDED
     deleteQuiz,
+    getTeacherDashboardKPIs,
     getQuizResults
   } = require('../controllers/teacherController');
 const authMiddleware = require('../middleware/authMiddleware');
@@ -129,6 +130,12 @@ router.get('/quizzes', authMiddleware, getQuizzesByTeacher);
 router.put('/quizzes/:quizId/status', authMiddleware, updateQuizStatus);
 router.delete('/quizzes/:quizId', authMiddleware, deleteQuiz);
 router.get('/quizzes/:quizId/results', authMiddleware, getQuizResults);
+// ========================================
+//          📊 DASHBOARD ROUTES (NEW)
+// ========================================
+router.get('/dashboard/kpis', authMiddleware, getTeacherDashboardKPIs);
+
+// ...
 // --- Future routes ---
 // router.get('/quizzes/:quizId', authMiddleware, getQuizDetails);     // Get details of one quiz
 // router.put('/quizzes/:quizId', authMiddleware, updateQuiz);        // Update a quiz

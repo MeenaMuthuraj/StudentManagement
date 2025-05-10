@@ -2061,6 +2061,62 @@ const getQuizResults = async (req, res) => {
 };
 
 
+// --- NEW FUNCTION for Dashboard KPIs ---
+/**
+ * @desc    Get Key Performance Indicators for Teacher Dashboard
+ * @route   GET /api/teacher/dashboard/kpis
+ * @access  Private (Teacher)
+ */
+const getTeacherDashboardKPIs = async (req, res) => {
+    const teacherId = req.user?.userId;
+    if (!teacherId) return res.status(401).json({ message: "Authentication error." });
+
+    console.log(`---> GET /api/teacher/dashboard/kpis for Teacher ${teacherId}`);
+
+    try {
+        // 1. Total Classes Managed
+        const totalClasses = await Class.countDocuments({ teacher: teacherId });
+
+        // 2. Active Published Quizzes
+        // Quizzes that are 'Published' and (dueDate is not set OR dueDate is in the future)
+        const now = new Date();
+        const activePublishedQuizzes = await Quiz.countDocuments({
+            teacher: teacherId,
+            status: 'Published',
+            $or: [
+                { dueDate: null },
+                { dueDate: { $gte: now } }
+            ]
+        });
+
+        // 3. Quizzes in Draft
+        const draftQuizzes = await Quiz.countDocuments({
+            teacher: teacherId,
+            status: 'Draft'
+        });
+
+        // Future: Total Students (requires accurate student enrollment in Class model)
+        // let totalStudents = 0;
+        // const classesWithStudents = await Class.find({ teacher: teacherId }).select('students');
+        // classesWithStudents.forEach(cls => { totalStudents += cls.students.length; });
+
+        const kpis = {
+            totalClasses,
+            activePublishedQuizzes,
+            draftQuizzes,
+            // totalStudents // Add later
+        };
+        console.log(`<--- Sending KPIs for Teacher ${teacherId}:`, kpis);
+        res.status(200).json(kpis);
+
+    } catch (error) {
+        console.error(`!!! Error fetching KPIs for Teacher ${teacherId}:`, error);
+        res.status(500).json({ message: "Server error fetching dashboard KPIs." });
+    }
+};
+
+
+
 // --- *** Update Exports *** ---
 module.exports = {
   getTeacherProfile,
@@ -2094,6 +2150,7 @@ module.exports = {
   updateQuizStatus, // <-- ADDED
   deleteQuiz, 
   getQuizResults,
+  getTeacherDashboardKPIs,
   // Keep upload instance
   uploadImage,
   uploadDocument 
